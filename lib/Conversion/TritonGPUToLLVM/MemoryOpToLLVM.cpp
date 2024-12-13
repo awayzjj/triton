@@ -79,6 +79,16 @@ struct LocalAllocOpConversion
     auto sharedLayout =
         cast<triton::gpu::SharedEncodingAttr>(resultTy.getEncoding());
     auto order = sharedLayout.getOrder();
+    // SmallVector<unsigned int> order;
+    // auto encOrder = sharedLayout.getOrder();
+    // if (sharedLayout.getMaxPhase() > 1) { // Swizzling
+    //   assert(encOrder.size() == 2 && resultTy.getShape().size() >= 2 &&
+    //          "Swizzling requires at least 2 dimensions");
+    //   unsigned rankDiff = resultTy.getShape().size() - encOrder.size();
+    //   order = {encOrder[0] + rankDiff, encOrder[1] + rankDiff};
+    //   for (auto i = 0; i < rankDiff; ++i)
+    //     order.push_back(i + rankDiff);
+    // }
     // Workaround for 3D tensors
     // TODO: we need to modify the pipeline pass to give a proper shared
     // encoding to 3D tensors

@@ -891,9 +891,8 @@ LinearLayout chooseStMatrixLayoutLeadingOffset(
       .reshapeOuts({{kOffset, ret.getTotalOutDimSize()}, {S("iteration"), 1}});
 }
 
-LinearLayout chooseStMatrixLayoutNoLeadingOffset(
-    MLIRContext *ctx, RankedTensorType tensorTy, ArrayRef<unsigned> repShape,
-    ArrayRef<unsigned> paddedRepShape, ArrayRef<unsigned> order) {
+LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
+                                                   RankedTensorType tensorTy) {
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
   StringAttr kWarp = S("warp");
@@ -937,11 +936,17 @@ LinearLayout chooseStMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
                                   ArrayRef<unsigned> order,
                                   int swizzleByteSize) {
   if (swizzleByteSize == 0)
-    return chooseStMatrixLayoutNoLeadingOffset(ctx, tensorTy, repShape,
-                                               paddedRepShape, order);
+    return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy);
   else
     return chooseStMatrixLayoutLeadingOffset(
         ctx, tensorTy, repShape, paddedRepShape, order, swizzleByteSize);
+}
+
+LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
+                                  int swizzleByteSize) {
+  assert(swizzleByteSize == 0 &&
+         "Ldmatrix does not support leading offset yet");
+  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy);
 }
 
 } // namespace mlir::triton::gpu

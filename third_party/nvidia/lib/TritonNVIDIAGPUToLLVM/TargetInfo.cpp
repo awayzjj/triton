@@ -507,6 +507,29 @@ bool TargetInfo::canUseStMatrix(RankedTensorType tensorTy,
   return true;
 }
 
+bool TargetInfo::canUseLdMatrix(RankedTensorType tensorTy,
+                                ArrayRef<unsigned> order,
+                                int swizzleByteSize) const {
+  if (computeCapability < 80) {
+    return false;
+  }
+  auto encoding = tensorTy.getEncoding();
+  auto dotLayout = cast<DotOperandEncodingAttr>(encoding);
+  if (!dotLayout)
+    return false;
+  auto mmaLayout = cast<NvidiaMmaEncodingAttr>(dotLayout.getParent());
+  if (!mmaLayout)
+    return false;
+  auto rank = tensorTy.getRank();
+  if (rank < 2)
+    return false;
+  auto bitwidth = tensorTy.getElementTypeBitWidth();
+  auto kWidth = dotLayout.getKWidth();
+  //  TODO(Keren): Let's enable more general cases step by step
+  return bitwidth == 16 && order[0] == 1 && bitwidth * kWidth == 32 &&
+         rank == 2;
+}
+
 void TargetInfo::storeMatrixShared(RewriterBase &rewriter, Location loc,
                                    Value ptr, Value val) const {
   auto vals = unpackLLVector(loc, val, rewriter);
