@@ -43,14 +43,9 @@ public:
                               ArrayRef<unsigned> paddedRepShape,
                               ArrayRef<unsigned> order,
                               int swizzleByteSize) const = 0;
-  virtual bool canUseLdMatrix(RankedTensorType tensorTy,
-                              ArrayRef<unsigned> order,
-                              int swizzleByteSize) const = 0;
 
   virtual void storeMatrixShared(RewriterBase &rewriter, Location loc,
                                  Value ptr, Value val) const = 0;
-  virtual void loadMatrixShared(RewriterBase &rewriter, Location loc, Value ptr,
-                                Value val) const = 0;
 
   virtual Value shuffleXor(RewriterBase &rewriter, Location loc, Value val,
                            int i) const = 0;

@@ -26,8 +26,11 @@ using namespace mlir::triton::gpu;
 struct LocalLoadOpConversion
     : public ConvertOpToLLVMPattern<triton::gpu::LocalLoadOp> {
 public:
-  using ConvertOpToLLVMPattern<
-      triton::gpu::LocalLoadOp>::ConvertOpToLLVMPattern;
+  LocalLoadOpConversion(const LLVMTypeConverter &converter,
+                        const NVIDIA::TargetInfo &targetInfo,
+                        PatternBenefit benefit = 1)
+      : ConvertOpToLLVMPattern<triton::gpu::LocalLoadOp>(converter, benefit),
+        targetInfo(targetInfo) {}
 
   LogicalResult
   matchAndRewrite(triton::gpu::LocalLoadOp op, OpAdaptor adaptor,
@@ -48,78 +51,138 @@ public:
       auto rank = dstTy.getRank();
       auto kOrder = dot.getOpIdx() == 0 ? rank - 1 : rank - 2;
       auto needTrans = kOrder != shared.getOrder()[0];
-      auto canUseLdmatrix =
+      auto canUseLdmatrixLegacy =
           (bitwidth == 16 || (!needTrans)) && (kWidth == vecWidth);
       if (mma.isHopper()) {
         // I think we should be able to remove this condition, but it's here
         // as the legacy ldmatrix path does not support it
-        canUseLdmatrix &= srcTy.getElementTypeBitWidth() * kWidth == 32;
+        canUseLdmatrixLegacy &= srcTy.getElementTypeBitWidth() * kWidth == 32 &&
+                                dot.getOpIdx() == 0;
       }
       // If we remove this one, ldmatrix will IMA. It can probably be relaxed
       // though
-      canUseLdmatrix &=
+      canUseLdmatrixLegacy &=
           srcTy.getShape()[0] >= 8 &&
           srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
-      if (canUseLdmatrix) {
-        return lowerSharedToDotOperand(op, adaptor, getTypeConverter(),
-                                       rewriter);
+      // The LL path only supports ldmatrix.x4
+      auto canUseLdmatrixLL = canUseLdmatrixLegacy && bitwidth == 16 &&
+                              !needTrans && srcTy.getShape()[0] >= 16 &&
+                              srcTy.getShape()[1] >= 16;
+      if (canUseLdmatrixLL) {
+        return lowerSharedToDotOperandLL(op, adaptor, getTypeConverter(),
+                                         rewriter);
+      } else if (canUseLdmatrixLegacy) {
+        return lowerSharedToDotOperandLegacy(op, adaptor, getTypeConverter(),
+                                             rewriter);
       }
     }
     return failure();
   }
 
 private:
-  // shared -> dot_operand if the result layout is mma
-  Value lowerSharedToDotOperandMMA(
-      triton::gpu::LocalLoadOp op, triton::gpu::LocalLoadOpAdaptor adaptor,
-      const LLVMTypeConverter *typeConverter,
-      ConversionPatternRewriter &rewriter,
-      const NvidiaMmaEncodingAttr &mmaLayout,
-      const DotOperandEncodingAttr &dotOperandLayout) const {
+  LogicalResult
+  lowerSharedToDotOperandLegacy(triton::gpu::LocalLoadOp op,
+                                triton::gpu::LocalLoadOpAdaptor adaptor,
+                                const LLVMTypeConverter *typeConverter,
+                                ConversionPatternRewriter &rewriter) const {
     auto loc = op.getLoc();
     auto src = op.getSrc();
-    auto dst = op.getResult();
-    bool isMMA = supportMMA(dst, mmaLayout.getVersionMajor());
-
+    auto dstLayout = cast<DotOperandEncodingAttr>(op.getType().getEncoding());
+    auto mmaLayout = cast<NvidiaMmaEncodingAttr>(dstLayout.getParent());
     auto llvmElemTy =
         typeConverter->convertType(src.getType().getElementType());
-
     auto smemObj = LLVM::getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
                                                          llvmElemTy, rewriter);
     Value res;
-
     if (mmaLayout.isHopper() || mmaLayout.isAmpere()) { // tensor core v2 or v3
       if (mmaLayout.isHopper())
-        assert(dotOperandLayout.getOpIdx() == 0 &&
+        assert(dstLayout.getOpIdx() == 0 &&
                "Operand $b in MMAv3 can only be in shared memory");
 
       res = SharedToDotOperandMMAv2OrV3::convertLayout(
-          dotOperandLayout.getOpIdx(), rewriter, loc, src, dotOperandLayout,
-          smemObj, typeConverter, getThreadId(rewriter, loc));
+          dstLayout.getOpIdx(), rewriter, loc, src, dstLayout, smemObj,
+          typeConverter, getThreadId(rewriter, loc));
     } else {
-      assert(false && "Unsupported mma layout found");
+      llvm_unreachable("Unsupported mma layout found");
     }
-    return res;
-  };
-
-  // shared -> mma_operand
-  LogicalResult
-  lowerSharedToDotOperand(triton::gpu::LocalLoadOp op,
-                          triton::gpu::LocalLoadOpAdaptor adaptor,
-                          const LLVMTypeConverter *typeConverter,
-                          ConversionPatternRewriter &rewriter) const {
-    auto loc = op.getLoc();
-    auto dstEnc = cast<DotOperandEncodingAttr>(op.getType().getEncoding());
-    auto sharedLayout =
-        cast<SharedEncodingAttr>(op.getSrc().getType().getEncoding());
-
-    auto mmaLayout = cast<NvidiaMmaEncodingAttr>(dstEnc.getParent());
-    Value res = lowerSharedToDotOperandMMA(op, adaptor, typeConverter, rewriter,
-                                           mmaLayout, dstEnc);
-
     rewriter.replaceOp(op, res);
     return success();
   }
+
+  LogicalResult
+  lowerSharedToDotOperandLL(triton::gpu::LocalLoadOp op,
+                            triton::gpu::LocalLoadOpAdaptor adaptor,
+                            const LLVMTypeConverter *typeConverter,
+                            ConversionPatternRewriter &rewriter) const {
+    auto ctx = rewriter.getContext();
+    auto loc = op.getLoc();
+    auto srcTy = cast<MemDescType>(op.getSrc().getType());
+    auto dot = cast<DotOperandEncodingAttr>(srcTy.getEncoding());
+    auto shape = srcTy.getShape();
+    auto layout = chooseLdMatrixLayout(ctx, dot, shape, /*swizzleByteSize=*/0);
+    Value smemBase = LLVM::getSharedMemoryBase(loc, rewriter, targetInfo, op);
+    auto smemPtrTy = ptr_ty(ctx, 3);
+
+    auto kRegister = str_attr("register");
+    auto kLane = str_attr("lane");
+    auto kWarp = str_attr("warp");
+    auto kBlock = str_attr("block");
+
+    auto [laneId, warpId, blockId] =
+        emitHardwareTuple(loc, rewriter, targetInfo, /*withCTAOffset=*/0,
+                          layout.getInDimSize(kLane));
+
+    auto regBase = applyLinearLayout(loc, rewriter, layout,
+                                     {{kRegister, i32_val(0)},
+                                      {kLane, laneId},
+                                      {kWarp, warpId},
+                                      {kBlock, i32_val(0)}})[0]
+                       .second;
+    auto numRegs = layout.getOutDimSize(kRegister);
+    auto vecSize = layout.getNumConsecutiveInOut();
+    auto matTy =
+        LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
+    SmallVector<Value> resI32;
+    for (int i = 0; i < numRegs; i += vecSize) {
+      auto regIdx =
+          layout.apply({{kRegister, i}, {kLane, 0}, {kWarp, 0}, {kBlock, 0}})[0]
+              .second;
+      Value offset = xor_(regBase, i32_val(regIdx));
+      auto vecAddr = gep(smemPtrTy, llvmElemTy, smemBase, offset);
+      vecAddr.setInbounds(true);
+      SmallVector<Value> inValsVec;
+      auto ldMatrixOp = rewriter.create<nvgpu::LoadMatrixOp>(
+          loc, matTy, vecAddr, /*needTrans=*/false);
+      auto resV4 = ldMatrixOp.getResult();
+      resI32.push_back(extract_val(i32_ty, resV4, 0));
+      resI32.push_back(extract_val(i32_ty, resV4, 1));
+      resI32.push_back(extract_val(i32_ty, resV4, 2));
+      resI32.push_back(extract_val(i32_ty, resV4, 3));
+    }
+
+    SmallVector<Value> res;
+    auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
+    Type llvmElemTy = typeConverter->convertType(srcTy.getElementType());
+    auto bitwidth = llvmElemTy.getIntOrFloatBitWidth();
+    auto numElemsPerVec =
+        mma.isHopper() ? dot.getKWidth() : 32 / dot.getKWidth();
+    auto vecTy = vec_ty(llvmElemTy, numElemsPerVec);
+    for (int i = 0; i < resI32.size(); ++i) {
+      // Unpack the 32-bit values into the final result
+      auto vecVal = resI32[i];
+      for (int v = 0; v < numElemsPerVec; v++)
+        res.push_back(extract_element(i32_ty, vecVal, i32_val(v)));
+    }
+
+    auto structTy = LLVM::LLVMStructType::getLiteral(
+        ctx, SmallVector<Type>(res.size(), llvmElemTy));
+    auto ret = packLLElements(loc, typeConverter, res, rewriter, structTy);
+    rewriter.replaceOp(op, res);
+    return success();
+  }
+
+private:
+  const NVIDIA::TargetInfo &targetInfo;
 };
 
 struct LocalAllocOpConversion
@@ -174,10 +237,9 @@ struct LocalAllocOpConversion
     auto kWarp = str_attr("warp");
     auto kBlock = str_attr("block");
 
-    Value threadId = getThreadId(rewriter, loc);
-    Value threadsPerWarp = i32_val(layout.getInDimSize(kLane));
-    Value laneId = urem(threadId, threadsPerWarp);
-    Value warpId = udiv(threadId, threadsPerWarp);
+    auto [laneId, warpId, blockId] =
+        emitHardwareTuple(loc, rewriter, targetInfo, /*withCTAOffset=*/0,
+                          layout.getInDimSize(kLane));
 
     auto regBase = applyLinearLayout(loc, rewriter, layout,
                                      {{kRegister, i32_val(0)},
@@ -222,7 +284,8 @@ void mlir::triton::NVIDIA::populateMemoryOpToLLVMPatterns(
   // Backend optimized memory ops get higher benefit
   patterns.add<LocalAllocOpConversion>(typeConverter, targetInfo,
                                        benefit.getBenefit() + 1);
-  patterns.add<LocalLoadOpConversion>(typeConverter, benefit.getBenefit() + 1);
+  patterns.add<LocalLoadOpConversion>(typeConverter, targetInfo,
+                                      benefit.getBenefit() + 1);
   mlir::triton::populateMemoryOpToLLVMPatterns(typeConverter, targetInfo,
                                                patterns, benefit);
 }

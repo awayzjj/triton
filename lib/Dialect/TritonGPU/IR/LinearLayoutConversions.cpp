@@ -1001,7 +1001,8 @@ LinearLayout chooseStMatrixLayoutLeadingOffset(
 }
 
 LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
-                                                   RankedTensorType tensorTy) {
+                                                   Attribute encoding,
+                                                   ArrayRef<int64_t> shape) {
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
   StringAttr kWarp = S("warp");
@@ -1016,7 +1017,7 @@ LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kCol, kRow});
 
   // Expand the `register` dimension so the size of columns matches `n`.
-  auto mma = cast<NvidiaMmaEncodingAttr>(tensorTy.getEncoding());
+  auto mma = cast<NvidiaMmaEncodingAttr>(encoding);
   int n = mma.getInstrShape()[1];
   layout *=
       LinearLayout::identity1D(n / layout.getOutDimSize(kCol), kReg, kCol);
@@ -1024,9 +1025,8 @@ LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   // Expand the `warp` dimension according to warpsPerCTA.
   layout *= identityStandardND(kWarp, mma.getWarpsPerCTA(), /*order=*/{0, 1})
                 .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
-  auto ret =
-      combineCtaCgaWithShape(layout, mma.getCTALayout(), tensorTy.getShape());
-  auto tensorShapePerCTA = getShapePerCTA(mma, tensorTy.getShape());
+  auto ret = combineCtaCgaWithShape(layout, mma.getCTALayout(), shape);
+  auto tensorShapePerCTA = getShapePerCTA(mma, shape);
   llvm::SmallDenseMap<StringAttr, int64_t> namedTensorShape;
   namedTensorShape[kRow] = tensorShapePerCTA[0];
   namedTensorShape[kCol] = tensorShapePerCTA[1];
@@ -1045,17 +1045,19 @@ LinearLayout chooseStMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
                                   ArrayRef<unsigned> order,
                                   int swizzleByteSize) {
   if (swizzleByteSize == 0)
-    return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy);
+    return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy.getEncoding(),
+                                                 tensorTy.getShape());
   else
     return chooseStMatrixLayoutLeadingOffset(
         ctx, tensorTy, repShape, paddedRepShape, order, swizzleByteSize);
 }
 
-LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
+LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, Attribute encoding,
+                                  ArrayRef<int64_t> shape,
                                   int swizzleByteSize) {
   assert(swizzleByteSize == 0 &&
          "Ldmatrix does not support leading offset yet");
-  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy);
+  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, encoding, shape);
 }
 
 } // namespace mlir::triton::gpu

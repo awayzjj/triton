@@ -32,12 +32,8 @@ public:
                       ArrayRef<unsigned> paddedRepShape,
                       ArrayRef<unsigned> order,
                       int swizzleByteSize) const override;
-  bool canUseLdMatrix(RankedTensorType tensorTy, ArrayRef<unsigned> order,
-                      int swizzleByteSize) const override;
   void storeMatrixShared(RewriterBase &rewriter, Location loc, Value ptr,
                          Value val) const override;
-  void loadMatrixShared(RewriterBase &rewriter, Location loc, Value ptr,
-                        Value val) const override;
 
   Value shuffleXor(RewriterBase &rewriter, Location loc, Value val,
                    int i) const override;

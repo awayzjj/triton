@@ -94,13 +94,6 @@ bool TargetInfo::canUseStMatrix(RankedTensorType tensorTy,
   return false;
 }
 
-bool TargetInfo::canUseLdMatrix(RankedTensorType tensorTy,
-                                ArrayRef<unsigned> order,
-                                int swizzleByteSize) const {
-  // AMD does not support ldmatrix
-  return false;
-}
-
 void TargetInfo::storeMatrixShared(RewriterBase &rewriter, Location loc,
                                    Value ptr, Value val) const {
   llvm::report_fatal_error("AMDGPU does not support stmatrix");
