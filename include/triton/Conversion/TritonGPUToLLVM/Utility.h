@@ -1484,6 +1484,16 @@ inline Value packLLVector(Location loc, ValueRange vals,
   return vec;
 }
 
+bool isSimpleSharedMemoryAccess(ArrayRef<int64_t> shape,
+                                ArrayRef<int64_t> allocShape,
+                                triton::gpu::SharedEncodingAttr sharedEnc) {
+  auto rank = shape.size();
+  return /*no swizzling*/ sharedEnc.getMaxPhase() == 1 ||
+         /*swizzling but same shape*/ shape == allocShape ||
+         /*swizzling and rank-reduced and rank >= 2*/
+         (shape == allocShape.take_back(rank) && rank >= 2);
+}
+
 } // namespace mlir
 
 #endif

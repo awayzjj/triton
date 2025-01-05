@@ -64,10 +64,13 @@ public:
       canUseLdmatrixLegacy &=
           srcTy.getShape()[0] >= 8 &&
           srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
+      auto allocShape = srcTy.getAllocShape();
+      auto shape = srcTy.getShape();
       // The LL path only supports ldmatrix.x4
-      auto canUseLdmatrixLL = canUseLdmatrixLegacy && bitwidth == 16 &&
-                              !needTrans && srcTy.getShape()[0] >= 16 &&
-                              srcTy.getShape()[1] >= 16;
+      auto canUseLdmatrixLL =
+          canUseLdmatrixLegacy && bitwidth == 16 && !needTrans &&
+          srcTy.getShape()[0] >= 16 && srcTy.getShape()[1] >= 16 &&
+          isSimpleSharedMemoryAccess(shape, allocShape, shared);
       if (canUseLdmatrixLL) {
         return lowerSharedToDotOperandLL(op, adaptor, getTypeConverter(),
                                          rewriter);
@@ -116,10 +119,11 @@ private:
                             ConversionPatternRewriter &rewriter) const {
     auto ctx = rewriter.getContext();
     auto loc = op.getLoc();
-    auto srcTy = cast<MemDescType>(op.getSrc().getType());
-    auto dot = cast<DotOperandEncodingAttr>(srcTy.getEncoding());
-    auto shape = srcTy.getShape();
-    auto layout = chooseLdMatrixLayout(ctx, dot, shape, /*swizzleByteSize=*/0);
+    auto dstTy = cast<RankedTensorType>(op.getType());
+    auto dot = cast<DotOperandEncodingAttr>(dstTy.getEncoding());
+    auto shape = dstTy.getShape();
+    auto layout = chooseLdMatrixLayout(ctx, dot.getParent(), shape,
+                                       /*swizzleByteSize=*/0);
     Value smemBase = LLVM::getSharedMemoryBase(loc, rewriter, targetInfo, op);
     auto smemPtrTy = ptr_ty(ctx, 3);
 
@@ -142,7 +146,7 @@ private:
     auto vecSize = layout.getNumConsecutiveInOut();
     auto matTy =
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
-    auto llvmElemTy = typeConverter->convertType(srcTy.getElementType());
+    auto llvmElemTy = typeConverter->convertType(dstTy.getElementType());
     SmallVector<Value> resI32;
     for (int i = 0; i < numRegs; i += vecSize) {
       auto regIdx =
