@@ -144,7 +144,7 @@ private:
                                       {kWarp, warpId},
                                       {kBlock, i32_val(0)}})[0]
                        .second;
-    auto numRegs = layout.getOutDimSize(kRegister);
+    auto numRegs = layout.getInDimSize(kRegister);
     auto vecSize = layout.getNumConsecutiveInOut();
     auto matTy =
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
