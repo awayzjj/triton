@@ -61,16 +61,16 @@ public:
       }
       // If we remove this one, ldmatrix will IMA. It can probably be relaxed
       // though
-      canUseLdmatrixLegacy &=
-          srcTy.getShape()[0] >= 8 &&
-          srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
       auto allocShape = srcTy.getAllocShape();
       auto shape = srcTy.getShape();
-      // The LL path only supports ldmatrix.x4
       auto canUseLdmatrixLL =
           canUseLdmatrixLegacy && bitwidth == 16 && !needTrans &&
           srcTy.getShape()[0] >= 16 && srcTy.getShape()[1] >= 16 &&
           isSimpleSharedMemoryAccess(shape, allocShape, shared);
+      canUseLdmatrixLegacy &=
+          srcTy.getShape()[0] >= 8 &&
+          srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
+      // The LL path only supports ldmatrix.x4
       if (canUseLdmatrixLL) {
         return lowerSharedToDotOperandLL(op, adaptor, getTypeConverter(),
                                          rewriter);
