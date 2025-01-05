@@ -142,6 +142,7 @@ private:
     auto vecSize = layout.getNumConsecutiveInOut();
     auto matTy =
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
+    auto llvmElemTy = typeConverter->convertType(srcTy.getElementType());
     SmallVector<Value> resI32;
     for (int i = 0; i < numRegs; i += vecSize) {
       auto regIdx =
@@ -150,7 +151,6 @@ private:
       Value offset = xor_(regBase, i32_val(regIdx));
       auto vecAddr = gep(smemPtrTy, llvmElemTy, smemBase, offset);
       vecAddr.setInbounds(true);
-      SmallVector<Value> inValsVec;
       auto ldMatrixOp = rewriter.create<nvgpu::LoadMatrixOp>(
           loc, matTy, vecAddr, /*needTrans=*/false);
       auto resV4 = ldMatrixOp.getResult();
@@ -162,11 +162,8 @@ private:
 
     SmallVector<Value> res;
     auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
-    Type llvmElemTy = typeConverter->convertType(srcTy.getElementType());
-    auto bitwidth = llvmElemTy.getIntOrFloatBitWidth();
     auto numElemsPerVec =
         mma.isHopper() ? dot.getKWidth() : 32 / dot.getKWidth();
-    auto vecTy = vec_ty(llvmElemTy, numElemsPerVec);
     for (int i = 0; i < resI32.size(); ++i) {
       // Unpack the 32-bit values into the final result
       auto vecVal = resI32[i];
