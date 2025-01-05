@@ -124,7 +124,9 @@ private:
     auto shape = dstTy.getShape();
     auto layout = chooseLdMatrixLayout(ctx, dot.getParent(), shape,
                                        /*swizzleByteSize=*/0);
-    Value smemBase = LLVM::getSharedMemoryBase(loc, rewriter, targetInfo, op);
+    auto llvmElemTy = typeConverter->convertType(dstTy.getElementType());
+    auto smemObj = LLVM::getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
+                                                         llvmElemTy, rewriter);
     auto smemPtrTy = ptr_ty(ctx, 3);
 
     auto kRegister = str_attr("register");
@@ -146,14 +148,13 @@ private:
     auto vecSize = layout.getNumConsecutiveInOut();
     auto matTy =
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
-    auto llvmElemTy = typeConverter->convertType(dstTy.getElementType());
     SmallVector<Value> resI32;
     for (int i = 0; i < numRegs; i += vecSize) {
       auto regIdx =
           layout.apply({{kRegister, i}, {kLane, 0}, {kWarp, 0}, {kBlock, 0}})[0]
               .second;
       Value offset = xor_(regBase, i32_val(regIdx));
-      auto vecAddr = gep(smemPtrTy, llvmElemTy, smemBase, offset);
+      auto vecAddr = gep(smemPtrTy, llvmElemTy, smemObj.getBase(), offset);
       vecAddr.setInbounds(true);
       auto ldMatrixOp = rewriter.create<nvgpu::LoadMatrixOp>(
           loc, matTy, vecAddr, /*needTrans=*/false);
