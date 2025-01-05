@@ -59,14 +59,14 @@ public:
         canUseLdmatrixLegacy &= srcTy.getElementTypeBitWidth() * kWidth == 32 &&
                                 dot.getOpIdx() == 0;
       }
-      // If we remove this one, ldmatrix will IMA. It can probably be relaxed
-      // though
       auto allocShape = srcTy.getAllocShape();
       auto shape = srcTy.getShape();
       auto canUseLdmatrixLL =
           canUseLdmatrixLegacy && bitwidth == 16 && !needTrans &&
           srcTy.getShape()[0] >= 16 && srcTy.getShape()[1] >= 16 &&
           isSimpleSharedMemoryAccess(shape, allocShape, shared);
+      // If we remove this one, ldmatrix will IMA. It can probably be relaxed
+      // though
       canUseLdmatrixLegacy &=
           srcTy.getShape()[0] >= 8 &&
           srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
