@@ -172,7 +172,7 @@ private:
     auto vecTy = vec_ty(llvmElemTy, numElemsPerVec);
     for (int i = 0; i < elemsI32.size(); ++i) {
       // Unpack the 32-bit values into the final result
-      auto vec = bitcast(resI32[i], vecTy);
+      auto vec = bitcast(elemsI32[i], vecTy);
       for (auto v = 0; v < numElemsPerVec; ++v)
         elems.push_back(extract_element(llvmElemTy, vec, i32_val(v)));
     }
