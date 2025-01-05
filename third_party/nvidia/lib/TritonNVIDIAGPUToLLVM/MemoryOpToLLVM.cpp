@@ -148,7 +148,7 @@ private:
     auto vecSize = layout.getNumConsecutiveInOut();
     auto matTy =
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
-    SmallVector<Value> resI32;
+    SmallVector<Value> elemsI32;
     for (int i = 0; i < numRegs; i += vecSize) {
       auto regOffset =
           layout.apply({{kRegister, i}, {kLane, 0}, {kWarp, 0}, {kBlock, 0}})[0]
@@ -159,27 +159,28 @@ private:
       auto ldMatrixOp = rewriter.create<nvgpu::LoadMatrixOp>(
           loc, matTy, vecAddr, /*needTrans=*/false);
       auto resV4 = ldMatrixOp.getResult();
-      resI32.push_back(extract_val(i32_ty, resV4, 0));
-      resI32.push_back(extract_val(i32_ty, resV4, 1));
-      resI32.push_back(extract_val(i32_ty, resV4, 2));
-      resI32.push_back(extract_val(i32_ty, resV4, 3));
+      elemsI32.push_back(extract_val(i32_ty, resV4, 0));
+      elemsI32.push_back(extract_val(i32_ty, resV4, 1));
+      elemsI32.push_back(extract_val(i32_ty, resV4, 2));
+      elemsI32.push_back(extract_val(i32_ty, resV4, 3));
     }
 
-    SmallVector<Value> res;
+    SmallVector<Value> elems;
     auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
     auto numElemsPerVec =
         mma.isHopper() ? dot.getKWidth() : 32 / dot.getKWidth();
-    for (int i = 0; i < resI32.size(); ++i) {
+    auto vecTy = vec_ty(llvmElemTy, numElemsPerVec);
+    for (int i = 0; i < elemsI32.size(); ++i) {
       // Unpack the 32-bit values into the final result
-      auto vecVal = resI32[i];
-      for (int v = 0; v < numElemsPerVec; v++)
-        res.push_back(extract_element(i32_ty, vecVal, i32_val(v)));
+      auto vec = bitcast(resI32[i], vecTy);
+      for (auto v = 0; v < numElemsPerVec; ++v)
+        elems.push_back(extract_element(llvmElemTy, vec, i32_val(v)));
     }
 
     auto structTy = LLVM::LLVMStructType::getLiteral(
-        ctx, SmallVector<Type>(res.size(), llvmElemTy));
-    auto ret = packLLElements(loc, typeConverter, res, rewriter, structTy);
-    rewriter.replaceOp(op, res);
+        ctx, SmallVector<Type>(elems.size(), llvmElemTy));
+    auto ret = packLLElements(loc, typeConverter, elems, rewriter, structTy);
+    rewriter.replaceOp(op, ret);
     return success();
   }
 
