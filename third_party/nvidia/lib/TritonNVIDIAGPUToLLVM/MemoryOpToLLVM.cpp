@@ -150,10 +150,10 @@ private:
         LLVM::LLVMStructType::getLiteral(ctx, SmallVector<Type>(4, i32_ty));
     SmallVector<Value> resI32;
     for (int i = 0; i < numRegs; i += vecSize) {
-      auto regIdx =
+      auto regOffset =
           layout.apply({{kRegister, i}, {kLane, 0}, {kWarp, 0}, {kBlock, 0}})[0]
               .second;
-      Value offset = xor_(regBase, i32_val(regIdx));
+      Value offset = xor_(regBase, i32_val(regOffset));
       auto vecAddr = gep(smemPtrTy, llvmElemTy, smemObj.getBase(), offset);
       vecAddr.setInbounds(true);
       auto ldMatrixOp = rewriter.create<nvgpu::LoadMatrixOp>(

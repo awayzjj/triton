@@ -1104,7 +1104,7 @@ LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, Attribute encoding,
                                   int swizzleByteSize) {
   assert(swizzleByteSize == 0 &&
          "Ldmatrix does not support leading offset yet");
-  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, encoding, shape);
+  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, encoding, shape).invert();
 }
 
 } // namespace mlir::triton::gpu
