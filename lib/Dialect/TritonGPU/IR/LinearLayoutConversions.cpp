@@ -1124,7 +1124,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
                                         mma.getWarpOrder(), kDim, kWarp)
                 .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
-  return ret.transposeOuts({S("dim1"), S("dim0")})
+  return ret.transposeOuts({kInner, kOuter})
       .reshapeOuts(
           {{S("offset"), ret.getTotalOutDimSize()}, {S("iteration"), 1}});
 }
