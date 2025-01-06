@@ -1090,8 +1090,8 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
   StringAttr kWarp = S("warp");
-  StringAttr kCol = S("dim0");
-  StringAttr kRow = S("dim1");
+  StringAttr kCol = S("dim1");
+  StringAttr kRow = S("dim0");
   StringAttr kBlock = S("block");
 
   auto dot = cast<DotOperandEncodingAttr>(encoding);
@@ -1107,10 +1107,10 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kCol, kRow});
 
   // 1. Expand the `register` dimension so the size of columns matches `K`.
-  // 2. Expand the `warp` dimension according to warpsPerCTA.
   layout *= LinearLayout::identity1D(shape[kDim] / layout.getOutDimSize(kCol),
-                                     kReg, kCol) *
-            broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
+                                     kReg, kCol);
+  // 2. Expand the `warp` dimension according to warpsPerCTA.
+  layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
                                         mma.getWarpOrder(), kDim, kWarp);
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts(llvm::to_vector(layout.getOutDimNames()))
