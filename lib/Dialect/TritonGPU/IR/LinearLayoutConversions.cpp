@@ -1047,9 +1047,9 @@ LinearLayout chooseStMatrixLayoutLeadingOffset(
       {{S("offset"), layout.getTotalOutDimSize()}, {S("iteration"), 1}});
 }
 
-LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
-                                                   Attribute encoding,
-                                                   ArrayRef<int64_t> shape) {
+LinearLayout chooseStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
+                                                 Attribute encoding,
+                                                 ArrayRef<int64_t> shape) {
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
   StringAttr kWarp = S("warp");
@@ -1084,6 +1084,40 @@ LinearLayout chooseLdStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
           {{S("offset"), ret.getTotalOutDimSize()}, {S("iteration"), 1}});
 }
 
+LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
+                                                 Attribute encoding,
+                                                 ArrayRef<int64_t> shape) {
+  StringAttr kReg = S("register");
+  StringAttr kLane = S("lane");
+  StringAttr kWarp = S("warp");
+  StringAttr kCol = S("dim1");
+  StringAttr kRow = S("dim0");
+  StringAttr kBlock = S("block");
+
+  std::vector<std::vector<int>> basesReg = {{1, 0}, {2, 0}, {4, 0}};
+  std::vector<std::vector<int>> basesLane = {
+      {0, 1}, {0, 2}, {0, 4}, {0, 8}, {8, 0}};
+  LinearLayout layout =
+      LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kCol, kRow});
+
+  auto dot = cast<DotOperandEncodingAttr>(encoding);
+  auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
+  auto rank = shape.size();
+  auto kDim = dot.getOpIdx();
+  int k = kDim == 0 ? shape[rank - 1] : shape[rank - 2];
+
+  // Expand the `register` dimension so the size of columns matches `k`.
+  // Expand the `warp` dimension according to warpsPerCTA.
+  layout *=
+      LinearLayout::identity1D(k / layout.getOutDimSize(kCol), kReg, kCol) *
+      broadcastedDotOperandLayout(ctx, dot.getWarpsPerCTA(), dot.getWarpOrder(),
+                                  kDim, kWarp);
+  auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
+  return ret.transposeOuts(llvm::to_vector(layout.getOutDimNames()))
+      .reshapeOuts(
+          {{S("offset"), ret.getTotalOutDimSize()}, {S("iteration"), 1}});
+}
+
 } // anonymous namespace
 
 LinearLayout chooseStMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
@@ -1092,8 +1126,8 @@ LinearLayout chooseStMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
                                   ArrayRef<unsigned> order,
                                   int swizzleByteSize) {
   if (swizzleByteSize == 0)
-    return chooseLdStMatrixLayoutNoLeadingOffset(ctx, tensorTy.getEncoding(),
-                                                 tensorTy.getShape());
+    return chooseStMatrixLayoutNoLeadingOffset(ctx, tensorTy.getEncoding(),
+                                               tensorTy.getShape());
   else
     return chooseStMatrixLayoutLeadingOffset(
         ctx, tensorTy, repShape, paddedRepShape, order, swizzleByteSize);
@@ -1104,7 +1138,7 @@ LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, Attribute encoding,
                                   int swizzleByteSize) {
   assert(swizzleByteSize == 0 &&
          "Ldmatrix does not support leading offset yet");
-  return chooseLdStMatrixLayoutNoLeadingOffset(ctx, encoding, shape);
+  return chooseLdMatrixLayoutNoLeadingOffset(ctx, encoding, shape);
 }
 
 } // namespace mlir::triton::gpu

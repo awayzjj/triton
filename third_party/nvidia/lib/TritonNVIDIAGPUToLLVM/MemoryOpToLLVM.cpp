@@ -122,7 +122,7 @@ private:
     auto dstTy = cast<RankedTensorType>(op.getType());
     auto dot = cast<DotOperandEncodingAttr>(dstTy.getEncoding());
     auto shape = dstTy.getShape();
-    auto layout = chooseLdMatrixLayout(ctx, dot.getParent(), shape,
+    auto layout = chooseLdMatrixLayout(ctx, dot, shape,
                                        /*swizzleByteSize=*/0);
     auto llvmElemTy = typeConverter->convertType(dstTy.getElementType());
     auto smemObj = LLVM::getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
