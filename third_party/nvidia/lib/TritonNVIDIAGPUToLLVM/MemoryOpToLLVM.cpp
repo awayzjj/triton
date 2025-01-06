@@ -166,10 +166,7 @@ private:
     }
 
     SmallVector<Value> elems;
-    auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
-    auto numElemsPerVec = mma.isHopper()
-                              ? dot.getKWidth()
-                              : 32 / llvmElemTy.getIntOrFloatBitWidth();
+    auto numElemsPerVec = 32 / llvmElemTy.getIntOrFloatBitWidth();
     auto vecTy = vec_ty(llvmElemTy, numElemsPerVec);
     for (int i = 0; i < elemsI32.size(); ++i) {
       // Unpack the 32-bit values into the final result
