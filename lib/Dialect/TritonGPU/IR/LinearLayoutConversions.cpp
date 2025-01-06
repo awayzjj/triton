@@ -1087,11 +1087,17 @@ LinearLayout chooseStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
 LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
                                                  Attribute encoding,
                                                  ArrayRef<int64_t> shape) {
+  auto dot = cast<DotOperandEncodingAttr>(encoding);
+  auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
+  auto rank = shape.size();
+  auto opIdx = dot.getOpIdx();
+  int kDim = opIdx == 0 ? rank - 1 : rank - 2;
+
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
   StringAttr kWarp = S("warp");
-  StringAttr kCol = S("dim1");
-  StringAttr kRow = S("dim0");
+  StringAttr kCol = opIdx == 0 ? S("dim1") : S("dim0");
+  StringAttr kRow = opIdx == 0 ? S("dim0") : S("dim1");
   StringAttr kBlock = S("block");
 
   std::vector<std::vector<int>> basesReg = {{1, 0}, {2, 0}, {4, 0}};
@@ -1100,18 +1106,12 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   LinearLayout layout =
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kCol, kRow});
 
-  auto dot = cast<DotOperandEncodingAttr>(encoding);
-  auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
-  auto rank = shape.size();
-  auto kDim = dot.getOpIdx();
-  int k = kDim == 0 ? shape[rank - 1] : shape[rank - 2];
-
-  // 1. Expand the `register` dimension so the size of columns matches `k`.
+  // 1. Expand the `register` dimension so the size of columns matches `K`.
   // 2. Expand the `warp` dimension according to warpsPerCTA.
-  layout *=
-      LinearLayout::identity1D(k / layout.getOutDimSize(kCol), kReg, kCol) *
-      broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(), mma.getWarpOrder(),
-                                  kDim, kWarp);
+  layout *= LinearLayout::identity1D(shape[kDim] / layout.getOutDimSize(kCol),
+                                     kReg, kCol) *
+            broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
+                                        mma.getWarpOrder(), kDim, kWarp);
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts(llvm::to_vector(layout.getOutDimNames()))
       .reshapeOuts(
