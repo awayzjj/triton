@@ -1085,7 +1085,8 @@ LinearLayout chooseStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
 }
 
 LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
-                                                 Attribute encoding,
+                                                 SharedEncodingAttr shared,
+                                                 DotOperandEncodingAttr dot,
                                                  ArrayRef<int64_t> shape) {
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
@@ -1094,15 +1095,22 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   StringAttr kCol = S("dim1");
   StringAttr kBlock = S("block");
 
-  auto dot = cast<DotOperandEncodingAttr>(encoding);
   auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
   auto rank = shape.size();
   auto opIdx = dot.getOpIdx();
   int kDim = opIdx == 0 ? rank - 1 : rank - 2;
 
   std::vector<std::vector<int>> basesReg = {{0, 1}, {0, 2}, {0, 4}};
-  std::vector<std::vector<int>> basesLane = {
-      {1, 0}, {2, 0}, {4, 0}, {8, 0}, {0, 8}};
+  std::vector<std::vector<int>> basesLane;
+  int numRowsPerTile = 16;
+  int vecSize = shared.getVec();
+  int perPhase = shared.getPerPhase();
+  int maxPhase = shared.getMaxPhase();
+  for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
+    int row = 1 << logRow;
+    basesLane.push_back({vecSize * ((row / perPhase) % maxPhase), row});
+  }
+  basesLane.push_back({8, 0});
   LinearLayout layout =
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kRow, kCol});
 
@@ -1134,12 +1142,13 @@ LinearLayout chooseStMatrixLayout(MLIRContext *ctx, RankedTensorType tensorTy,
         ctx, tensorTy, repShape, paddedRepShape, order, swizzleByteSize);
 }
 
-LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, Attribute encoding,
-                                  ArrayRef<int64_t> shape,
-                                  int swizzleByteSize) {
-  assert(swizzleByteSize == 0 &&
+LinearLayout chooseLdMatrixLayout(MLIRContext *ctx, Attribute sharedEnc,
+                                  Attribute dotEnc, ArrayRef<int64_t> shape) {
+  auto shared = cast<SharedEncodingAttr>(sharedEnc);
+  auto dot = cast<DotOperandEncodingAttr>(dotEnc);
+  assert(!shared.getHasLeadingOffset() &&
          "Ldmatrix does not support leading offset yet");
-  return chooseLdMatrixLayoutNoLeadingOffset(ctx, encoding, shape);
+  return chooseLdMatrixLayoutNoLeadingOffset(ctx, shared, dot, shape);
 }
 
 } // namespace mlir::triton::gpu

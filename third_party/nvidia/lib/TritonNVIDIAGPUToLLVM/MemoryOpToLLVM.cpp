@@ -59,7 +59,11 @@ public:
         canUseLdmatrixLegacy &= srcTy.getElementTypeBitWidth() * kWidth == 32 &&
                                 dot.getOpIdx() == 0;
       }
-      canUseLdmatrixLegacy &= dstTy.getRank() <= 2;
+      // If we perform swizzling, it must be done within a single ldmatrix tile
+      auto maxPhase = shared.getMaxPhase();
+      auto perPhase = shared.getPerPhase();
+      canUseLdmatrixLegacy &=
+          dstTy.getRank() <= 2 && (maxPhase / perPhase <= 16);
       auto allocShape = srcTy.getAllocShape();
       auto shape = srcTy.getShape();
       auto canUseLdmatrixLL =
@@ -120,10 +124,11 @@ private:
     auto ctx = rewriter.getContext();
     auto loc = op.getLoc();
     auto dstTy = cast<RankedTensorType>(op.getType());
+    auto srcTy = cast<MemDescType>(op.getSrc().getType());
     auto dot = cast<DotOperandEncodingAttr>(dstTy.getEncoding());
+    auto shared = cast<SharedEncodingAttr>(srcTy.getEncoding());
     auto shape = dstTy.getShape();
-    auto layout = chooseLdMatrixLayout(ctx, dot, shape,
-                                       /*swizzleByteSize=*/0);
+    auto layout = chooseLdMatrixLayout(ctx, shared, dot, shape);
     auto llvmElemTy = typeConverter->convertType(dstTy.getElementType());
     auto smemObj = LLVM::getSharedMemoryObjectFromStruct(loc, adaptor.getSrc(),
                                                          llvmElemTy, rewriter);
