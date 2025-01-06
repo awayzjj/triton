@@ -59,6 +59,7 @@ public:
         canUseLdmatrixLegacy &= srcTy.getElementTypeBitWidth() * kWidth == 32 &&
                                 dot.getOpIdx() == 0;
       }
+      canUseLdmatrixLegacy &= dstTy.getRank() <= 2;
       auto allocShape = srcTy.getAllocShape();
       auto shape = srcTy.getShape();
       auto canUseLdmatrixLL =
@@ -68,8 +69,7 @@ public:
       // If we remove this one, ldmatrix will IMA. It can probably be relaxed
       // though
       canUseLdmatrixLegacy &=
-          srcTy.getShape()[0] >= 8 &&
-          srcTy.getShape()[1] >= 4 * kWidth & dstTy.getRank() <= 2;
+          srcTy.getShape()[0] >= 8 && srcTy.getShape()[1] >= 4 * kWidth;
       // The LL path only supports ldmatrix.x4
       if (canUseLdmatrixLL) {
         return lowerSharedToDotOperandLL(op, adaptor, getTypeConverter(),
