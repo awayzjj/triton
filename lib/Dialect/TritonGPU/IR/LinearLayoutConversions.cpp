@@ -1088,17 +1088,17 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
                                                  SharedEncodingAttr shared,
                                                  DotOperandEncodingAttr dot,
                                                  ArrayRef<int64_t> shape) {
-  StringAttr kReg = S("register");
-  StringAttr kLane = S("lane");
-  StringAttr kWarp = S("warp");
-  StringAttr kRow = S("dim0");
-  StringAttr kCol = S("dim1");
-  StringAttr kBlock = S("block");
-
   auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
   auto rank = shape.size();
   auto opIdx = dot.getOpIdx();
   int kDim = opIdx == 0 ? rank - 1 : rank - 2;
+
+  StringAttr kReg = S("register");
+  StringAttr kLane = S("lane");
+  StringAttr kWarp = S("warp");
+  StringAttr kInner = opIdx == 0 ? S("dim1") : S("dim0");
+  StringAttr kOuter = opIdx == 0 ? S("dim0") : S("dim1");
+  StringAttr kBlock = S("block");
 
   std::vector<std::vector<int>> basesReg = {{0, 1}, {0, 2}, {0, 4}};
   std::vector<std::vector<int>> basesLane;
@@ -1118,13 +1118,13 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     basesReg.push_back({0, 16 * col});
   }
   auto layout = LinearLayout(
-      {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kRow, kCol});
+      {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kOuter, kInner});
   // Expand the `warp` dimension according to warpsPerCTA.
   layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
                                         mma.getWarpOrder(), kDim, kWarp)
                 .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
-  return ret.transposeOuts({kCol, kRow})
+  return ret.transposeOuts({S("dim1"), S("dim0")})
       .reshapeOuts(
           {{S("offset"), ret.getTotalOutDimSize()}, {S("iteration"), 1}});
 }
