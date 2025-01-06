@@ -1108,7 +1108,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   int maxPhase = shared.getMaxPhase();
   for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
     int row = 1 << logRow;
-    basesLane.push_back({vecSize * ((row / perPhase) % maxPhase), row});
+    basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
   }
   basesLane.push_back({8, 0});
   LinearLayout layout =
