@@ -1111,13 +1111,15 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
   }
   basesLane.push_back({0, 8});
-  LinearLayout layout =
-      LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kRow, kCol});
 
-  // 1. Expand the `register` dimension so the size of columns matches `K`.
-  layout *= LinearLayout::identity1D(shape[kDim] / layout.getOutDimSize(kCol),
-                                     kReg, kCol);
-  // 2. Expand the `warp` dimension according to warpsPerCTA.
+  // Expand the `register` dimension so the size of columns matches `K`.
+  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / 16); logCol++) {
+    int col = 1 << logCol;
+    basesReg.push_back({0, 16 * col});
+  }
+  auto layout = LinearLayout(
+      {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kRow, kCol});
+  // Expand the `warp` dimension according to warpsPerCTA.
   layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
                                         mma.getWarpOrder(), kDim, kWarp)
                 .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
