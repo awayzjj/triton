@@ -1105,13 +1105,21 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
       {1, 0}, {2, 0}, {4, 0}, {8, 0}, {0, 8}};
   LinearLayout layout =
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kRow, kCol});
+  // Construct dim names according to mma.getWarpOrder()
 
   // 1. Expand the `register` dimension so the size of columns matches `K`.
   layout *= LinearLayout::identity1D(shape[kDim] / layout.getOutDimSize(kCol),
                                      kReg, kCol);
   // 2. Expand the `warp` dimension according to warpsPerCTA.
-  layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
-                                        mma.getWarpOrder(), kDim, kWarp);
+  auto warpOrder = mma.getWarpOrder();
+  SmallVector<StringAttr> warpOutDimNames;
+  for (int i = 0; i < rank; i++) {
+    warpOutDimNames.push_back(S("dim" + std::to_string(warpOrder[i])));
+  }
+  layout *= layout.transposeOuts(warpOutDimNames) *
+            broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(), warpOrder,
+                                        kDim, kWarp)
+                .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts(llvm::to_vector(layout.getOutDimNames()))
       .reshapeOuts(
