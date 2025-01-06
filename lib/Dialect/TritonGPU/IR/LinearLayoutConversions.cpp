@@ -1106,11 +1106,11 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   auto kDim = dot.getOpIdx();
   int k = kDim == 0 ? shape[rank - 1] : shape[rank - 2];
 
-  // Expand the `register` dimension so the size of columns matches `k`.
-  // Expand the `warp` dimension according to warpsPerCTA.
+  // 1. Expand the `register` dimension so the size of columns matches `k`.
+  // 2. Expand the `warp` dimension according to warpsPerCTA.
   layout *=
       LinearLayout::identity1D(k / layout.getOutDimSize(kCol), kReg, kCol) *
-      broadcastedDotOperandLayout(ctx, dot.getWarpsPerCTA(), dot.getWarpOrder(),
+      broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(), mma.getWarpOrder(),
                                   kDim, kWarp);
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts(llvm::to_vector(layout.getOutDimNames()))
