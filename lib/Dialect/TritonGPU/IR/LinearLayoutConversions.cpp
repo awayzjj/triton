@@ -1087,18 +1087,18 @@ LinearLayout chooseStMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
 LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
                                                  Attribute encoding,
                                                  ArrayRef<int64_t> shape) {
+  StringAttr kReg = S("register");
+  StringAttr kLane = S("lane");
+  StringAttr kWarp = S("warp");
+  StringAttr kCol = S("dim0");
+  StringAttr kRow = S("dim1");
+  StringAttr kBlock = S("block");
+
   auto dot = cast<DotOperandEncodingAttr>(encoding);
   auto mma = cast<NvidiaMmaEncodingAttr>(dot.getParent());
   auto rank = shape.size();
   auto opIdx = dot.getOpIdx();
   int kDim = opIdx == 0 ? rank - 1 : rank - 2;
-
-  StringAttr kReg = S("register");
-  StringAttr kLane = S("lane");
-  StringAttr kWarp = S("warp");
-  StringAttr kCol = opIdx == 0 ? S("dim1") : S("dim0");
-  StringAttr kRow = opIdx == 0 ? S("dim0") : S("dim1");
-  StringAttr kBlock = S("block");
 
   std::vector<std::vector<int>> basesReg = {{1, 0}, {2, 0}, {4, 0}};
   std::vector<std::vector<int>> basesLane = {
