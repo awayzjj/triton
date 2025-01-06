@@ -1102,7 +1102,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
 
   std::vector<std::vector<int>> basesReg = {{0, 1}, {0, 2}, {0, 4}};
   std::vector<std::vector<int>> basesLane;
-  int numRowsPerTile = 16;
+  auto numRowsPerTile = 16;
   int vecSize = shared.getVec();
   int perPhase = shared.getPerPhase();
   int maxPhase = shared.getMaxPhase();
@@ -1113,9 +1113,10 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   basesLane.push_back({0, 8});
 
   // Expand the `register` dimension so the size of columns matches `K`.
-  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / 16); logCol++) {
+  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / numRowsPerTile);
+       logCol++) {
     int col = 1 << logCol;
-    basesReg.push_back({0, 16 * col});
+    basesReg.push_back({0, numRowsPerTile * col});
   }
   auto layout = LinearLayout(
       {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kOuter, kInner});
