@@ -1106,16 +1106,15 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   int vecSize = shared.getVec();
   int perPhase = shared.getPerPhase();
   int maxPhase = shared.getMaxPhase();
-  for (int logOuter = 0; logOuter < llvm::Log2_32(numRowsPerTile); logOuter++) {
-    int outer = 1 << logOuter;
-    basesLane.push_back({outer, vecSize * ((outer / perPhase) % maxPhase)});
+  for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
+    int row = 1 << logRow;
+    basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
   }
   basesLane.push_back({0, 8});
 
   // Expand the `register` dimension so the size of columns matches `K`.
-  for (int logInner = 0; logInner < llvm::Log2_32(shape[kDim] / 16);
-       logInner++) {
-    int col = 1 << logInner;
+  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / 16); logCol++) {
+    int col = 1 << logCol;
     basesReg.push_back({0, 16 * col});
   }
   auto layout = LinearLayout(
@@ -1124,7 +1123,6 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
                                         mma.getWarpOrder(), kDim, kWarp)
                 .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
-  layout = layout.transposeOuts(standardOutDimNames(ctx, rank));
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts({kInner, kOuter})
       .reshapeOuts(
