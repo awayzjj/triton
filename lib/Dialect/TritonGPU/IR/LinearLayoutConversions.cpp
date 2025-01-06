@@ -1110,7 +1110,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     int row = 1 << logRow;
     basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
   }
-  basesLane.push_back({8, 0});
+  basesLane.push_back({0, 8});
   LinearLayout layout =
       LinearLayout({{kReg, basesReg}, {kLane, basesLane}}, {kRow, kCol});
 
