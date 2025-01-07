@@ -1156,10 +1156,10 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     // Expand the `register` dimension so the size of columns matches `K`.
     for (int logCol = 0;
          logCol <
-         llvm::Log2_32(shape[kDim] / (numColsPerTile * warpsPerCTA[0]));
+         llvm::Log2_32(shape[kDim] / (numColsPerTile * warpsPerCTA[1]));
          logCol++) {
       int col = 1 << logCol;
-      int numCols = numColsPerTile * warpsPerCTA[0] * col;
+      int numCols = numColsPerTile * warpsPerCTA[1] * col;
       basesReg.push_back({0, numCols});
     }
     layout = LinearLayout(
