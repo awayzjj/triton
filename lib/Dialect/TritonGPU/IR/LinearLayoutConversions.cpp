@@ -1092,6 +1092,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   auto rank = shape.size();
   auto opIdx = dot.getOpIdx();
   int kDim = opIdx == 0 ? rank - 1 : rank - 2;
+  int nonKDim = opIdx == 0 ? rank - 2 : rank - 1;
 
   StringAttr kReg = S("register");
   StringAttr kLane = S("lane");
@@ -1107,8 +1108,9 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   int vecSize = shared.getVec();
   int perPhase = shared.getPerPhase();
   int maxPhase = shared.getMaxPhase();
-  // Expand the `register` dimension so the size of columns matches `K`.
+  auto layout = LinearLayout::empty();
   if (opIdx == 0) {
+    // Expand the `register` dimension so the size of columns matches `K`.
     for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
       int row = 1 << logRow;
       basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
@@ -1119,20 +1121,38 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
       int col = 1 << logCol;
       basesReg.push_back({0, numColsPerTile * col});
     }
+    layout = LinearLayout({{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}},
+                          {kOuter, kInner});
+    // Expand the `warp` dimension according to warpsPerCTA.
+    layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
+                                          mma.getWarpOrder(), kDim, kWarp)
+                  .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   } else {
+    // Construct half of the tile
     for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile / 2); logRow++) {
       int row = 1 << logRow;
       basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
     }
     basesLane.push_back({0, numColsPerTile / 2});
+    // Construct the warp dimension
+    for (int logWarp = 0; logWarp < llvm::Log2_32(mma.getWarpsPerCTA()[1]);
+         logWarp++) {
+      int warp = 1 << logWarp;
+      int warpRow = warp * numRowsPerTile / 2;
+      if (warpRow >= shape[nonKDim]) {
+        basesReg.push_back({0, 0});
+      } else {
+        basesReg.push_back({warpRow, 0});
+      }
+    }
+    int warpRow = mma.getWarpsPerCTA()[1] * numRowsPerTile / 2;
+    if (warpRow >= shape[nonKDim]) {
+      basesLane.push_back({0, 0});
+    } else {
+      basesLane.push_back({warpRow, 0});
+    }
   }
 
-  auto layout = LinearLayout(
-      {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kOuter, kInner});
-  // Expand the `warp` dimension according to warpsPerCTA.
-  layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
-                                        mma.getWarpOrder(), kDim, kWarp)
-                .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
   return ret.transposeOuts({kInner, kOuter})
       .reshapeOuts(
