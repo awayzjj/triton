@@ -63,7 +63,7 @@ public:
       auto maxPhase = shared.getMaxPhase();
       auto perPhase = shared.getPerPhase();
       canUseLdmatrixLegacy &=
-          dstTy.getRank() <= 2 && (maxPhase / perPhase <= 16);
+          dstTy.getRank() <= 2 && (maxPhase / perPhase <= 8);
       auto allocShape = srcTy.getAllocShape();
       auto shape = srcTy.getShape();
       auto canUseLdmatrixLL =

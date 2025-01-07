@@ -1103,20 +1103,30 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   std::vector<std::vector<int>> basesReg = {{0, 1}, {0, 2}, {0, 4}};
   std::vector<std::vector<int>> basesLane;
   auto numRowsPerTile = 16;
+  auto numColsPerTile = 16;
   int vecSize = shared.getVec();
   int perPhase = shared.getPerPhase();
   int maxPhase = shared.getMaxPhase();
-  for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
-    int row = 1 << logRow;
-    basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
+  if (opIdx == 0) {
+    for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
+      int row = 1 << logRow;
+      basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
+    }
+    basesLane.push_back({0, numColsPerTile / 2});
+  } else {
+    for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile / 2); logRow++) {
+      int row = 1 << logRow;
+      basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
+    }
+    basesLane.push_back({0, numColsPerTile / 2});
+    basesLane.push_back({numRowsPerTile / 2, 0});
   }
-  basesLane.push_back({0, 8});
 
   // Expand the `register` dimension so the size of columns matches `K`.
-  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / numRowsPerTile);
+  for (int logCol = 0; logCol < llvm::Log2_32(shape[kDim] / numColsPerTile);
        logCol++) {
     int col = 1 << logCol;
-    basesReg.push_back({0, numRowsPerTile * col});
+    basesReg.push_back({0, numColsPerTile * col});
   }
   auto layout = LinearLayout(
       {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}}, {kOuter, kInner});
