@@ -1151,6 +1151,8 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     } else {
       basesLane.push_back({warpRow, 0});
     }
+    layout = LinearLayout({{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}},
+                          {kOuter, kInner});
   }
 
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
