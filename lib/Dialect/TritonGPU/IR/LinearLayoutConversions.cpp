@@ -1134,25 +1134,27 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
       basesLane.push_back({row, vecSize * ((row / perPhase) % maxPhase)});
     }
     basesLane.push_back({0, numColsPerTile / 2});
+    std::vector<std::vector<int>> basesWarp;
     // Construct the warp dimension
     for (int logWarp = 0; logWarp < llvm::Log2_32(mma.getWarpsPerCTA()[1]);
          logWarp++) {
       int warp = 1 << logWarp;
       int warpRow = warp * numRowsPerTile / 2;
       if (warpRow >= shape[nonKDim]) {
-        basesReg.push_back({0, 0});
+        basesWarp.push_back({0, 0});
       } else {
-        basesReg.push_back({warpRow, 0});
+        basesWarp.push_back({warpRow, 0});
       }
     }
-    int warpRow = mma.getWarpsPerCTA()[1] * numRowsPerTile / 2;
-    if (warpRow >= shape[nonKDim]) {
+    int laneRow = mma.getWarpsPerCTA()[1] * numRowsPerTile / 2;
+    if (laneRow >= shape[nonKDim]) {
       basesLane.push_back({0, 0});
     } else {
-      basesLane.push_back({warpRow, 0});
+      basesLane.push_back({laneRow, 0});
     }
-    layout = LinearLayout({{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}},
-                          {kOuter, kInner});
+    layout = LinearLayout(
+        {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {basesWarp}}},
+        {kOuter, kInner});
   }
 
   auto ret = combineCtaCgaWithShape(layout, getCTALayout(dot), shape);
