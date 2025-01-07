@@ -1109,6 +1109,7 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
   int perPhase = shared.getPerPhase();
   int maxPhase = shared.getMaxPhase();
   auto layout = LinearLayout::empty();
+  auto warpsPerCTA = mma.getWarpsPerCTA();
   if (opIdx == 0) {
     // Expand the `register` dimension so the size of columns matches `K`.
     for (int logRow = 0; logRow < llvm::Log2_32(numRowsPerTile); logRow++) {
@@ -1124,8 +1125,8 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
     layout = LinearLayout({{kReg, basesReg}, {kLane, basesLane}, {kWarp, {}}},
                           {kOuter, kInner});
     // Expand the `warp` dimension according to warpsPerCTA.
-    layout *= broadcastedDotOperandLayout(ctx, mma.getWarpsPerCTA(),
-                                          mma.getWarpOrder(), kDim, kWarp)
+    layout *= broadcastedDotOperandLayout(ctx, warpsPerCTA, mma.getWarpOrder(),
+                                          kDim, kWarp)
                   .transposeOuts(llvm::to_vector(layout.getOutDimNames()));
   } else {
     // Construct half of the tile
@@ -1146,11 +1147,20 @@ LinearLayout chooseLdMatrixLayoutNoLeadingOffset(MLIRContext *ctx,
         basesWarp.push_back({warpRow, 0});
       }
     }
-    int laneRow = mma.getWarpsPerCTA()[1] * numRowsPerTile / 2;
+    int laneRow = warpsPerCTA[1] * numRowsPerTile / 2;
     if (laneRow >= shape[nonKDim]) {
       basesLane.push_back({0, 0});
     } else {
       basesLane.push_back({laneRow, 0});
+    }
+    // Expand the `register` dimension so the size of columns matches `K`.
+    for (int logCol = 0;
+         logCol <
+         llvm::Log2_32(shape[kDim] / (numColsPerTile * warpsPerCTA[0]));
+         logCol++) {
+      int col = 1 << logCol;
+      int numCols = numColsPerTile * warpsPerCTA[0] * col;
+      basesReg.push_back({0, numCols});
     }
     layout = LinearLayout(
         {{kReg, basesReg}, {kLane, basesLane}, {kWarp, {basesWarp}}},
